@@ -29,9 +29,9 @@
 │       └── vendor/go1_menagerie.xml
 ├── video_gen/
 │   └── make_video.py      视频生成（MuJoCo 离屏渲染 + 逐帧读数叠加）
-├── video/                 已生成的 4 段视频
+├── video/                 已生成的 5 段视频
 ├── checkpoints/
-│   ├── ckpt_600.pt        对齐版权重（约 200 训练迭代后的快照）
+│   ├── ckpt_600.pt        对齐版权重（第 600 次训练迭代的快照）
 │   └── v8_ckpt_100.pt     V8 基线权重（对比用）
 └── README.md
 ```
@@ -40,11 +40,14 @@
 
 ## 跑起来
 
-依赖：**Python 3.12 + mujoco 3.x + torch + numpy + pillow + glfw**
+依赖：**Python 3.12 + mujoco 3.x + torch + numpy + pillow + glfw + imageio**
 
 ```bash
-pip install mujoco torch numpy pillow glfw
+pip install mujoco torch numpy pillow glfw "imageio[ffmpeg]"
 ```
+
+> `imageio` 只用来写 mp4。没装也能跑，但只会输出 `.gif`——脚本里写 mp4 那段有
+> `try/except`，失败不报错，只打印「MP4 跳过」。
 
 > 原项目为了绕开 Windows 上的 pip 文件锁，把依赖解压到 `.pylibs/` 并通过
 > `PYTHONPATH` 注入。用普通 `pip install` 也一样，只要 `import mujoco` 能过。
@@ -56,13 +59,14 @@ cd video_gen
 python make_video.py
 ```
 
-会在 `../video/` 下重新生成 4 段 mp4：
+会在 `../video/` 下重新生成 **5 段视频**（每段同时输出 `.mp4` 和 `.gif`）：
 
 | 文件 | 内容 |
 |---|---|
 | `video_align_0.5.mp4` | 对齐版 @ vx = +0.5 m/s |
 | `video_align_1.0.mp4` | 对齐版 @ vx = +1.0 m/s（高速档，仍未追上指令） |
 | `video_align_stand.mp4` | 对齐版 @ vx = 0（零速锁时钟，四足着地） |
+| `video_v8_1.0.mp4` | V8 基线 @ +1.0 m/s（能加速到约 0.9，但频繁摔倒） |
 | `video_compare_1.0.mp4` | V8（左）vs 对齐版（右），同指令并排对比 |
 
 视频里的画面设计：地面每 0.5 m 一个标记、相机跟随基座、每帧叠加指令/实测速度/位移/时间读数。
@@ -74,8 +78,9 @@ cd code
 python train_hist.py
 ```
 
-权重默认写到 `runs/`，评估用 `eval_hist.py`。**注意**：两个脚本里的 checkpoint
-路径按原机器目录硬编码过（`runs/hist_dr_*/`），换机器需自己改。
+权重默认写到 `code/runs/<tag>_<时间戳>/`，每次迭代存一个 `ckpt_<iter>.pt`，
+结束再存 `final.pt` 和 `summary.json`。评估用 `eval_hist.py`。**注意**：两个脚本里的
+checkpoint 路径按原机器目录硬编码过（`runs/hist_dr_*/`），换机器需自己改。
 
 ---
 
@@ -83,11 +88,14 @@ python train_hist.py
 
 | 项 | V8 基线 | 对齐版 |
 |---|---|---|
-| 域随机化 | 无 | 质量 / 摩擦 / 电机强度扰动 |
-| 观测历史 | 单帧 | 30 帧堆叠（历史编码器） |
+| 域随机化 | 无 | 摩擦 U[0.1, 3.0]、弹性 [0, 0.4]、负载 ±2 kg、电机强度 [0.9, 1.1]、电机零位 ±0.02、重力 ±1 |
+| 观测历史 | 单帧（63 维） | **30 帧堆叠**（历史编码器） |
 | Actor-Critic | 对称 | **非对称**（critic 用特权信息） |
 | 速度跟踪精度 | 较高 | **略降**（精度换稳定） |
 | 抗扰动 / 鲁棒性 | 较弱 | **明显改善** |
+
+> 注意维度：模型有 **18 个执行器**，但 Stage 1 的策略只输出 **12 维**（四条腿），
+> 机械臂锁在默认位姿 `[0, 0.8, 0.8, 0, 0, 0]` 不动。`NUM_ACT = 12`，别和 18 混了。
 
 即报告第 5.4 节说的「**精度换稳定**」。完整数据见
 [复现报告](https://github.com/Loober107/RoboDuet-Reproduction/blob/main/report/RoboDuet_%E5%A4%8D%E7%8E%B0%E6%8A%A5%E5%91%8A_V8_%E4%BF%AE%E6%AD%A3.docx)。
