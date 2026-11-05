@@ -22,8 +22,10 @@
 │   │   ├── go1_env.py         向量化环境：50 Hz 策略 / 200 Hz 物理
 │   │   └── go1_env_dr.py      域随机化子类
 │   └── models/
-│       ├── arx5p2Go1.xml      MuJoCo 模型（18 执行器 / 25 qpos / 24 dof）
-│       ├── build_model.py     从 Menagerie Go1 + 6 DoF 臂拼装
+│       ├── arx5p2Go1.xml      MuJoCo 模型（实际使用：18 执行器 / 27 qpos / 26 dof）
+│       ├── build_mjcf.py      从官方 URDF 生成上述模型（质量/惯量/限位均取原文件）
+│       ├── go1_arm.xml        早期 6 DoF 替身版（18 执行器 / 25 qpos / 24 dof）
+│       ├── build_model.py     从 Menagerie Go1 + 6 DoF 臂拼装出替身版
 │       └── vendor/go1_menagerie.xml
 ├── video_gen/
 │   └── make_video.py      视频生成（MuJoCo 离屏渲染 + 逐帧读数叠加）
