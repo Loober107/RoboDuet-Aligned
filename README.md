@@ -1,0 +1,121 @@
+# RoboDuet 对齐版 — 训练/评估代码 + 视频生成
+
+> 「对齐版」= 在 V8 基线上补上 **域随机化（DR）+ 观测历史 + 非对称 Actor-Critic** 三项对齐后的策略。
+> 论文口径下精度略降，但稳定性明显改善。
+
+这是 [RoboDuet-Reproduction](https://github.com/Loober107/RoboDuet-Reproduction) 里
+「对齐版」这一支的独立打包：**只要代码 + 视频生成脚本**，不含复现报告。
+
+---
+
+## 目录
+
+```
+├── code/                  对齐版代码
+│   ├── train_hist.py          对齐版训练（AsymActorCritic：历史编码器 + 非对称 critic）
+│   ├── train_stage1.py        基座网络定义（ActorCritic，被视频脚本依赖）
+│   ├── eval_hist.py           对齐版评估
+│   ├── eval_robust.py         DR 鲁棒性评估（V8 网络）
+│   ├── eval_robust_hist.py    DR 鲁棒性评估（对齐版网络）
+│   ├── model_io.py            模型载入（规避 MuJoCo 中文路径问题）
+│   ├── envs/
+│   │   ├── go1_env.py         向量化环境：50 Hz 策略 / 200 Hz 物理
+│   │   └── go1_env_dr.py      域随机化子类
+│   └── models/
+│       ├── arx5p2Go1.xml      MuJoCo 模型（18 执行器 / 25 qpos / 24 dof）
+│       ├── build_model.py     从 Menagerie Go1 + 6 DoF 臂拼装
+│       └── vendor/go1_menagerie.xml
+├── video_gen/
+│   └── make_video.py      视频生成（MuJoCo 离屏渲染 + 逐帧读数叠加）
+├── video/                 已生成的 4 段视频
+├── checkpoints/
+│   ├── ckpt_600.pt        对齐版权重（约 200 训练迭代后的快照）
+│   └── v8_ckpt_100.pt     V8 基线权重（对比用）
+└── README.md
+```
+
+---
+
+## 跑起来
+
+依赖：**Python 3.12 + mujoco 3.x + torch + numpy + pillow + glfw**
+
+```bash
+pip install mujoco torch numpy pillow glfw
+```
+
+> 原项目为了绕开 Windows 上的 pip 文件锁，把依赖解压到 `.pylibs/` 并通过
+> `PYTHONPATH` 注入。用普通 `pip install` 也一样，只要 `import mujoco` 能过。
+
+### 生成视频
+
+```bash
+cd video_gen
+python make_video.py
+```
+
+会在 `../video/` 下重新生成 4 段 mp4：
+
+| 文件 | 内容 |
+|---|---|
+| `video_align_0.5.mp4` | 对齐版 @ vx = +0.5 m/s |
+| `video_align_1.0.mp4` | 对齐版 @ vx = +1.0 m/s（高速档，仍未追上指令） |
+| `video_align_stand.mp4` | 对齐版 @ vx = 0（零速锁时钟，四足着地） |
+| `video_compare_1.0.mp4` | V8（左）vs 对齐版（右），同指令并排对比 |
+
+视频里的画面设计：地面每 0.5 m 一个标记、相机跟随基座、每帧叠加指令/实测速度/位移/时间读数。
+
+### 训练
+
+```bash
+cd code
+python train_hist.py
+```
+
+权重默认写到 `runs/`，评估用 `eval_hist.py`。**注意**：两个脚本里的 checkpoint
+路径按原机器目录硬编码过（`runs/hist_dr_*/`），换机器需自己改。
+
+---
+
+## 对齐版到底对齐了什么
+
+| 项 | V8 基线 | 对齐版 |
+|---|---|---|
+| 域随机化 | 无 | 质量 / 摩擦 / 电机强度扰动 |
+| 观测历史 | 单帧 | 30 帧堆叠（历史编码器） |
+| Actor-Critic | 对称 | **非对称**（critic 用特权信息） |
+| 速度跟踪精度 | 较高 | **略降**（精度换稳定） |
+| 抗扰动 / 鲁棒性 | 较弱 | **明显改善** |
+
+即报告第 5.4 节说的「**精度换稳定**」。完整数据见
+[复现报告](https://github.com/Loober107/RoboDuet-Reproduction/blob/main/report/RoboDuet_%E5%A4%8D%E7%8E%B0%E6%8A%A5%E5%91%8A_V8_%E4%BF%AE%E6%AD%A3.docx)。
+
+---
+
+## 改动说明（相对原目录）
+
+唯一改动是 `video_gen/make_video.py` 的路径常量，让它能在这个新目录结构下找到依赖：
+
+```python
+HERE = pathlib.Path(__file__).resolve().parent
+ROOT = HERE.parent                       # 仓库根目录
+sys.path.insert(0, str(ROOT / "code"))   # 依赖 code/ 下的模块
+
+RES       = ROOT / "video"
+MODEL_XML = ROOT / "code" / "models" / "arx5p2Go1.xml"
+V8_CKPT   = ROOT / "checkpoints" / "v8_ckpt_100.pt"
+AL_CKPT   = ROOT / "checkpoints" / "ckpt_600.pt"
+```
+
+并把 `torch.load(HERE / ckpt_path)` 改成 `torch.load(pathlib.Path(ckpt_path))`。
+算法本身一行没动。
+
+---
+
+## 参考
+
+- 论文：[arXiv:2403.17367](https://arxiv.org/abs/2403.17367)
+- 官方实现：[locomanip-duet/RoboDuet](https://github.com/locomanip-duet/RoboDuet)
+- 完整复现（报告 + 全部代码）：[Loober107/RoboDuet-Reproduction](https://github.com/Loober107/RoboDuet-Reproduction)
+
+个人学习性质，非官方实现。论文与官方代码版权归原作者所有。

@@ -1,0 +1,17 @@
+# 注意：checkpoints/*.pt 是刻意提交的（约 12 MB），不要加进忽略规则
+
+__pycache__/
+*.py[cod]
+.pylibs/
+.venv/
+venv/
+runs/
+output/
+logs/
+*.log
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
